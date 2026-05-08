@@ -28,6 +28,9 @@ function NuevoRecursoModal({ onDone }) {
   const submit = async (e) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
+    const cantidad = parseInt(fd.get('cantidad')) || 0
+    const stockMin = parseInt(fd.get('stock_minimo')) || 0
+    if (cantidad > 0 && stockMin > cantidad) { toast('El stock mínimo no puede superar la cantidad inicial', 'err'); return }
     setLoading(true)
     try {
       await recursosService.crear({
@@ -35,9 +38,9 @@ function NuevoRecursoModal({ onDone }) {
         proveedor: fd.get('proveedor'),
         descripcion: fd.get('descripcion') || '',
         categoria: fd.get('categoria'),
-        cantidad: parseInt(fd.get('cantidad')) || 0,
+        cantidad,
         unidad: fd.get('unidad'),
-        stock_minimo: parseInt(fd.get('stock_minimo')) || 0,
+        stock_minimo: stockMin,
         color: fd.get('color'),
       })
       toast(`Recurso "${fd.get('nombre')}" agregado`, 'ok')
@@ -76,6 +79,97 @@ function NuevoRecursoModal({ onDone }) {
   )
 }
 
+function EditarRecursoModal({ recurso, onDone }) {
+  const { closeModal } = useModal()
+  const toast = useToast()
+  const [loading, setLoading] = useState(false)
+  const cols = ['blue', 'teal', 'purple', 'amber', 'green', 'red']
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const stockMin = parseInt(fd.get('stock_minimo'))
+    if (!isNaN(stockMin) && stockMin > recurso.cantidad) {
+      toast(`El stock mínimo no puede superar el stock actual (${recurso.cantidad} ${recurso.unidad})`, 'err'); return
+    }
+    setLoading(true)
+    try {
+      await recursosService.actualizar(recurso.id, {
+        nombre: fd.get('nombre'),
+        proveedor: fd.get('proveedor'),
+        descripcion: fd.get('descripcion'),
+        stock_minimo: stockMin,
+        color: fd.get('color'),
+      })
+      toast(`Recurso actualizado`, 'ok')
+      closeModal(); onDone()
+    } catch (err) { toast(err.message, 'err') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <ModalHeader title={`Editar · ${recurso.nombre}`} />
+      <div className="frow">
+        <div className="fg"><label className="fl">Nombre</label><input className="fi" name="nombre" defaultValue={recurso.nombre} required /></div>
+        <div className="fg"><label className="fl">Proveedor</label><input className="fi" name="proveedor" defaultValue={recurso.proveedor} required /></div>
+      </div>
+      <div className="fg"><label className="fl">Descripción</label><input className="fi" name="descripcion" defaultValue={recurso.descripcion} /></div>
+      <div className="frow">
+        <div className="fg">
+          <label className="fl">Stock mínimo</label>
+          <input className="fi" name="stock_minimo" type="number" defaultValue={recurso.stock_minimo} min={0} max={recurso.cantidad} />
+          <span style={{ fontSize: 11, color: 'var(--t3)', marginTop: 3, display: 'block' }}>Stock actual: {recurso.cantidad} {recurso.unidad}</span>
+        </div>
+        <div className="fg">
+          <label className="fl">Color</label>
+          <select className="fi" name="color" defaultValue={recurso.color}>{cols.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        </div>
+      </div>
+      <div className="factions">
+        <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
+        <button type="submit" className="btn btn-blue" disabled={loading}>
+          {loading ? 'Guardando...' : <><i className="ti ti-check" />Guardar cambios</>}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function EliminarRecursoModal({ recurso, onDone }) {
+  const { closeModal } = useModal()
+  const toast = useToast()
+  const [loading, setLoading] = useState(false)
+
+  const confirmar = async () => {
+    setLoading(true)
+    try {
+      await recursosService.eliminar(recurso.id)
+      toast(`"${recurso.nombre}" eliminado`, 'ok')
+      closeModal(); onDone()
+    } catch (err) { toast(err.message, 'err') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div>
+      <ModalHeader title={`Eliminar recurso`} />
+      <div className="info-box" style={{ background: 'var(--red-bg)', border: '0.5px solid var(--red)', marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>¿Eliminar "{recurso.nombre}"?</div>
+        <div style={{ fontSize: 13, color: 'var(--red-dark)' }}>
+          Solo se puede eliminar si no tiene movimientos registrados (excepto el registro inicial).
+        </div>
+      </div>
+      <div className="factions">
+        <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
+        <button type="button" className="btn" style={{ background: 'var(--red)', color: '#fff' }} disabled={loading} onClick={confirmar}>
+          {loading ? 'Eliminando...' : <><i className="ti ti-trash" />Eliminar</>}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function MovRecursoModal({ onDone }) {
   const { closeModal } = useModal()
   const toast = useToast()
@@ -91,8 +185,9 @@ function MovRecursoModal({ onDone }) {
     const cantidad = parseInt(fd.get('cantidad'))
     setLoading(true)
     try {
-      await movRecursosService.crear({ recurso_id: selected.id, tipo, cantidad, responsable: fd.get('responsable'), nota: fd.get('nota') || '' })
-      toast(`${tipo} registrada: ${cantidad} ${selected.unidad} de "${selected.nombre}"`, 'ok')
+      const res = await movRecursosService.crear({ recurso_id: selected.id, tipo, cantidad, responsable: fd.get('responsable'), nota: fd.get('nota') || '' })
+      const msg = `${tipo} registrada: ${cantidad} ${selected.unidad} de "${selected.nombre}"`
+      toast(res.alerta === 'agotado' ? `${msg} — SIN STOCK` : res.alerta === 'critico' ? `${msg} — Stock crítico (${res.cantidad} restantes)` : res.alerta === 'bajo' ? `${msg} — Stock bajo` : msg, res.alerta ? 'warn' : 'ok')
       closeModal(); onDone()
     } catch (err) { toast(err.message, 'err') }
     finally { setLoading(false) }
@@ -105,13 +200,17 @@ function MovRecursoModal({ onDone }) {
         <label className="fl">Recurso</label>
         <select className="fi" onChange={e => setSelected(recursos.find(r => r.id === parseInt(e.target.value)) ?? null)} required>
           <option value="">Seleccionar...</option>
-          {recursos.map(r => <option key={r.id} value={r.id}>{r.nombre} ({r.cantidad} {r.unidad} disp.)</option>)}
+          {recursos.map(r => {
+            const critico = r.cantidad <= r.stock_minimo
+            return <option key={r.id} value={r.id}>{critico ? '⚠ ' : ''}{r.nombre} ({r.cantidad} {r.unidad} disp.)</option>
+          })}
         </select>
       </div>
       {selected && (
-        <div className={`info-box ${tipo === 'Salida' ? 'info-green' : 'info-blue'}`}>
+        <div className={`info-box ${selected.cantidad <= selected.stock_minimo ? 'info-red' : tipo === 'Salida' ? 'info-green' : 'info-blue'}`}>
           <span style={{ fontSize: 12 }}>{tipo === 'Salida' ? 'Disponible: ' : 'Stock actual: '}</span>
           <strong style={{ fontFamily: 'DM Mono,monospace' }}>{selected.cantidad} {selected.unidad}</strong>
+          {selected.cantidad <= selected.stock_minimo && <span style={{ fontSize: 11, color: 'var(--red-dark)', marginLeft: 8 }}>⚠ Stock crítico</span>}
         </div>
       )}
       <div className="frow">
@@ -141,6 +240,7 @@ function MovRapidoModal({ recurso, tipo, onDone }) {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
   const col = COLOR_MAP[recurso.color] || COLOR_MAP.blue
+  const critico = recurso.cantidad <= recurso.stock_minimo
 
   const submit = async (e) => {
     e.preventDefault()
@@ -148,8 +248,9 @@ function MovRapidoModal({ recurso, tipo, onDone }) {
     const cantidad = parseInt(fd.get('cantidad'))
     setLoading(true)
     try {
-      await movRecursosService.crear({ recurso_id: recurso.id, tipo, cantidad, responsable: fd.get('responsable'), nota: fd.get('nota') || '' })
-      toast(`${tipo} confirmada: ${cantidad} ${recurso.unidad} de "${recurso.nombre}"`, 'ok')
+      const res = await movRecursosService.crear({ recurso_id: recurso.id, tipo, cantidad, responsable: fd.get('responsable'), nota: fd.get('nota') || '' })
+      const msg = `${tipo} confirmada: ${cantidad} ${recurso.unidad} de "${recurso.nombre}"`
+      toast(res.alerta === 'agotado' ? `${msg} — SIN STOCK` : res.alerta === 'critico' ? `${msg} — Stock crítico (${res.cantidad} restantes)` : res.alerta === 'bajo' ? `${msg} — Stock bajo` : msg, res.alerta ? 'warn' : 'ok')
       closeModal(); onDone()
     } catch (err) { toast(err.message, 'err') }
     finally { setLoading(false) }
@@ -158,13 +259,15 @@ function MovRapidoModal({ recurso, tipo, onDone }) {
   return (
     <form onSubmit={submit}>
       <ModalHeader title={`${tipo} · ${recurso.nombre}`} />
-      <div style={{ background: col.bg, border: '0.5px solid rgba(0,0,0,.08)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: col.dark }}>{tipo === 'Salida' ? 'Disponible para usar' : 'Stock actual'}</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: col.accent, fontFamily: 'DM Mono,monospace' }}>{recurso.cantidad} {recurso.unidad}</div>
-        <div style={{ fontSize: 12, color: col.dark }}>{recurso.proveedor}</div>
+      <div style={{ background: critico ? 'var(--red-bg)' : col.bg, border: `0.5px solid ${critico ? 'var(--red)' : 'rgba(0,0,0,.08)'}`, borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: critico ? 'var(--red-dark)' : col.dark }}>
+          {critico ? '⚠ Stock crítico —' : ''} {tipo === 'Salida' ? 'Disponible para usar' : 'Stock actual'}
+        </div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: critico ? 'var(--red)' : col.accent, fontFamily: 'DM Mono,monospace' }}>{recurso.cantidad} {recurso.unidad}</div>
+        <div style={{ fontSize: 12, color: critico ? 'var(--red-dark)' : col.dark }}>{recurso.proveedor} · Mín: {recurso.stock_minimo} {recurso.unidad}</div>
       </div>
       <div className="frow">
-        <div className="fg"><label className="fl">Cantidad</label><input className="fi" name="cantidad" type="number" placeholder="0" min={1} required /></div>
+        <div className="fg"><label className="fl">Cantidad</label><input className="fi" name="cantidad" type="number" placeholder="0" min={1} max={tipo === 'Salida' ? recurso.cantidad : undefined} required /></div>
         <div className="fg"><label className="fl">Responsable</label><input className="fi" name="responsable" placeholder="Nombre" required /></div>
       </div>
       <div className="fg"><label className="fl">Nota / Propósito</label><input className="fi" name="nota" placeholder="Ej: Conservación lote JB-002" /></div>
@@ -198,16 +301,31 @@ function RecursosPageContent() {
             const col = COLOR_MAP[r.color] || COLOR_MAP.blue
 
             return (
-              <div key={r.id} className="inv-card pop-in" style={{ animationDelay: `${i * 40}ms` }}>
-                <div className="inv-card-accent" style={{ background: col.accent }} />
+              <div key={r.id} className="inv-card pop-in" style={{ animationDelay: `${i * 40}ms`, outline: estado === 'crítico' ? '1.5px solid var(--red)' : 'none' }}>
+                <div className="inv-card-accent" style={{ background: estado === 'crítico' ? 'var(--red)' : col.accent }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                   <div className="inv-name">{r.nombre}</div>
-                  <Badge label={estado} />
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <Badge label={estado} />
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      style={{ padding: '2px 5px' }}
+                      title="Editar"
+                      onClick={() => openModal(<EditarRecursoModal recurso={r} onDone={recargar} />)}
+                    ><i className="ti ti-pencil" /></button>
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      style={{ padding: '2px 5px', color: 'var(--red)' }}
+                      title="Eliminar"
+                      onClick={() => openModal(<EliminarRecursoModal recurso={r} onDone={recargar} />)}
+                    ><i className="ti ti-trash" /></button>
+                  </div>
                 </div>
                 <div className="inv-desc">{r.descripcion}</div>
-                <div className="inv-qty" style={{ color: col.accent }}>
+                <div className="inv-qty" style={{ color: estado === 'crítico' ? 'var(--red)' : col.accent }}>
                   {r.cantidad}
                   <span style={{ fontSize: 12, color: 'var(--t2)', fontFamily: 'DM Sans,sans-serif', marginLeft: 3 }}>{r.unidad}</span>
+                  {estado === 'crítico' && <span style={{ fontSize: 11, color: 'var(--red)', marginLeft: 8, fontFamily: 'DM Sans,sans-serif' }}>⚠ Reponer</span>}
                 </div>
                 <div style={{ margin: '8px 0 4px' }}>
                   <div className="prog" style={{ width: '100%' }}>
@@ -224,18 +342,10 @@ function RecursosPageContent() {
                   <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--t3)', background: 'var(--s3)', padding: '1px 6px', borderRadius: 10 }}>{r.categoria}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                  <button
-                    className="btn btn-ghost btn-xs"
-                    style={{ flex: 1, justifyContent: 'center' }}
-                    onClick={() => openModal(<MovRapidoModal recurso={r} tipo="Entrada" onDone={recargar} />)}
-                  >
+                  <button className="btn btn-ghost btn-xs" style={{ flex: 1, justifyContent: 'center' }} onClick={() => openModal(<MovRapidoModal recurso={r} tipo="Entrada" onDone={recargar} />)}>
                     <i className="ti ti-arrow-down" style={{ color: 'var(--green)' }} />Entrada
                   </button>
-                  <button
-                    className="btn btn-ghost btn-xs"
-                    style={{ flex: 1, justifyContent: 'center' }}
-                    onClick={() => openModal(<MovRapidoModal recurso={r} tipo="Salida" onDone={recargar} />)}
-                  >
+                  <button className="btn btn-ghost btn-xs" style={{ flex: 1, justifyContent: 'center' }} onClick={() => openModal(<MovRapidoModal recurso={r} tipo="Salida" onDone={recargar} />)}>
                     <i className="ti ti-arrow-up" style={{ color: 'var(--blue)' }} />Salida
                   </button>
                 </div>
@@ -256,9 +366,7 @@ function RecursosPageContent() {
 
       <div className="card">
         <div className="card-head">
-          <div className="card-title">
-            <i className="ti ti-arrows-exchange" style={{ color: 'var(--teal)' }} />Historial
-          </div>
+          <div className="card-title"><i className="ti ti-arrows-exchange" style={{ color: 'var(--teal)' }} />Historial</div>
           <div style={{ display: 'flex', gap: 6 }}>
             {[['', 'Todos'], ['Entrada', 'Entradas'], ['Salida', 'Salidas']].map(([val, label]) => (
               <button key={val} className={`chip ${filtro === val ? 'chip-active' : 'chip-inactive'}`} onClick={() => setFiltro(val)}>

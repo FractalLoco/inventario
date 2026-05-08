@@ -12,7 +12,9 @@ const req = async (url, options = {}) => {
 
 export const lotesService = {
   getAll: () => req('/api/lotes'),
+  getById: (id) => req(`/api/lotes/${id}`),
   crear: (body) => req('/api/lotes', { method: 'POST', body: JSON.stringify(body) }),
+  eliminar: (id) => req(`/api/lotes/${id}`, { method: 'DELETE' }),
 }
 
 export const movimientosService = {
@@ -26,6 +28,8 @@ export const movimientosService = {
 export const recursosService = {
   getAll: () => req('/api/recursos'),
   crear: (body) => req('/api/recursos', { method: 'POST', body: JSON.stringify(body) }),
+  actualizar: (id, body) => req(`/api/recursos/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  eliminar: (id) => req(`/api/recursos/${id}`, { method: 'DELETE' }),
 }
 
 export const movRecursosService = {

@@ -31,7 +31,7 @@ create table if not exists movimientos (
   producto_id bigint references productos_lote(id) on delete cascade,
   producto_nombre text not null,
   tipo text not null check (tipo in ('Entrada', 'Salida')),
-  cajas int not null,
+  cajas int not null check (cajas > 0),
   responsable text not null,
   nota text default '',
   created_at timestamptz default now()
@@ -43,9 +43,9 @@ create table if not exists recursos (
   proveedor text not null,
   descripcion text default '',
   categoria text default 'General',
-  cantidad int not null default 0,
+  cantidad int not null default 0 check (cantidad >= 0),
   unidad text not null default 'u',
-  stock_minimo int not null default 0,
+  stock_minimo int not null default 0 check (stock_minimo >= 0),
   color text default 'blue',
   created_at timestamptz default now()
 );
@@ -55,23 +55,35 @@ create table if not exists movimientos_recursos (
   recurso_id bigint references recursos(id) on delete cascade,
   recurso_nombre text not null,
   tipo text not null check (tipo in ('Entrada', 'Salida')),
-  cantidad int not null,
+  cantidad int not null check (cantidad > 0),
   unidad text not null,
   responsable text not null,
   nota text default '',
   created_at timestamptz default now()
 );
 
--- Datos de ejemplo (opcional)
+-- ── Índices para consultas frecuentes ──────────────────────────────────────
+create index if not exists idx_productos_lote_lote_id      on productos_lote(lote_id);
+create index if not exists idx_movimientos_lote_id         on movimientos(lote_id);
+create index if not exists idx_movimientos_producto_id     on movimientos(producto_id);
+create index if not exists idx_movimientos_created_at      on movimientos(created_at desc);
+create index if not exists idx_movimientos_tipo            on movimientos(tipo);
+create index if not exists idx_mov_recursos_recurso_id     on movimientos_recursos(recurso_id);
+create index if not exists idx_mov_recursos_created_at     on movimientos_recursos(created_at desc);
+
+-- Índice único case-insensitive en nombre de recursos para evitar duplicados
+create unique index if not exists idx_recursos_nombre_unique on recursos(lower(nombre));
+
+-- ── Datos de ejemplo (opcional) ────────────────────────────────────────────
 insert into lotes (id, especie, fecha, responsable, nota) values
   ('JB-001', 'Jibia', '2025-05-06', 'Op. Muñoz', 'Faena turno A completa'),
   ('MR-002', 'Merluza', '2025-05-05', 'Op. Soto', '');
 
 insert into productos_lote (lote_id, nombre, tipo_caja, procesadas, disponible, despachado, estado) values
   ('JB-001', 'Filete de Jibia', 'Caja 10kg', 45, 45, 0, 'Disponible'),
-  ('JB-001', 'Jibia Entera', 'Caja 15kg', 20, 12, 8, 'Disponible'),
+  ('JB-001', 'Jibia Entera', 'Caja 15kg', 20, 12, 8, 'En proceso'),
   ('JB-001', 'Tentáculos Jibia', 'Caja 8kg', 15, 0, 15, 'Agotado'),
-  ('MR-002', 'Merluza Fileteada', 'Caja 10kg', 60, 20, 40, 'Disponible'),
+  ('MR-002', 'Merluza Fileteada', 'Caja 10kg', 60, 20, 40, 'En proceso'),
   ('MR-002', 'Merluza Troceada', 'Caja 8kg', 30, 30, 0, 'Disponible');
 
 insert into recursos (nombre, proveedor, descripcion, categoria, cantidad, unidad, stock_minimo, color) values

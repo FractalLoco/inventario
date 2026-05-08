@@ -2,15 +2,19 @@ const { supabase } = require('../config/supabase')
 const { ok, created, badRequest, notFound, serverError } = require('../helpers/response.helper')
 
 const getMovRecursos = async (req, res) => {
-  const { tipo } = req.query
+  const { tipo, recurso_id, fecha_desde, fecha_hasta, limite = 300, offset = 0 } = req.query
 
   let query = supabase
     .from('movimientos_recursos')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(300)
+    .limit(parseInt(limite))
+    .range(parseInt(offset), parseInt(offset) + parseInt(limite) - 1)
 
   if (tipo) query = query.eq('tipo', tipo)
+  if (recurso_id) query = query.eq('recurso_id', recurso_id)
+  if (fecha_desde) query = query.gte('created_at', fecha_desde)
+  if (fecha_hasta) query = query.lte('created_at', fecha_hasta + 'T23:59:59')
 
   const { data, error } = await query
   if (error) return serverError(res, error.message)
@@ -30,6 +34,10 @@ const crearMovRecurso = async (req, res) => {
 
   if (tipo === 'Salida' && cantidad > recurso.cantidad) {
     return badRequest(res, `Solo hay ${recurso.cantidad} ${recurso.unidad} disponibles de "${recurso.nombre}"`)
+  }
+
+  if (tipo === 'Salida' && recurso.cantidad === 0) {
+    return badRequest(res, `"${recurso.nombre}" no tiene stock disponible`)
   }
 
   const nuevaCantidad = tipo === 'Salida'
@@ -53,7 +61,15 @@ const crearMovRecurso = async (req, res) => {
     nota: nota || '',
   })
 
-  return created(res, { ok: true, cantidad: nuevaCantidad })
+  const alertaStock = nuevaCantidad === 0
+    ? 'agotado'
+    : nuevaCantidad <= recurso.stock_minimo
+    ? 'critico'
+    : nuevaCantidad <= recurso.stock_minimo * 1.5
+    ? 'bajo'
+    : null
+
+  return created(res, { ok: true, cantidad: nuevaCantidad, alerta: alertaStock, nombre: recurso.nombre, unidad: recurso.unidad })
 }
 
 module.exports = { getMovRecursos, crearMovRecurso }

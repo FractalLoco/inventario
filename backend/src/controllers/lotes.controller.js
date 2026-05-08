@@ -24,6 +24,22 @@ const getLotes = async (_req, res) => {
   return ok(res, result)
 }
 
+const getLoteById = async (req, res) => {
+  const { id } = req.params
+
+  const { data: lote, error: loteErr } = await supabase
+    .from('lotes').select('*').eq('id', id).single()
+
+  if (loteErr || !lote) return notFound(res, `Lote ${id} no encontrado`)
+
+  const { data: productos, error: prodsErr } = await supabase
+    .from('productos_lote').select('*').eq('lote_id', id).order('id')
+
+  if (prodsErr) return serverError(res, prodsErr.message)
+
+  return ok(res, { ...lote, productos })
+}
+
 const crearLote = async (req, res) => {
   const { id, especie, fecha, responsable, nota, productos } = req.body
 
@@ -68,4 +84,30 @@ const crearLote = async (req, res) => {
   return created(res, { ok: true, lote_id: id, productos: insertedProds.length })
 }
 
-module.exports = { getLotes, crearLote }
+const eliminarLote = async (req, res) => {
+  const { id } = req.params
+
+  const { data: lote, error: loteErr } = await supabase
+    .from('lotes').select('id').eq('id', id).single()
+
+  if (loteErr || !lote) return notFound(res, `Lote ${id} no encontrado`)
+
+  const { count, error: movErr } = await supabase
+    .from('movimientos')
+    .select('*', { count: 'exact', head: true })
+    .eq('lote_id', id)
+    .eq('tipo', 'Salida')
+
+  if (movErr) return serverError(res, movErr.message)
+
+  if (count > 0) {
+    return badRequest(res, `No se puede eliminar el lote ${id}: tiene ${count} despacho(s) registrado(s)`)
+  }
+
+  const { error: delErr } = await supabase.from('lotes').delete().eq('id', id)
+  if (delErr) return serverError(res, delErr.message)
+
+  return ok(res, { ok: true, message: `Lote ${id} eliminado` })
+}
+
+module.exports = { getLotes, getLoteById, crearLote, eliminarLote }
