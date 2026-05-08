@@ -13,8 +13,8 @@ Control de lotes, productos, movimientos y recursos externos para planta pesquer
 
 ### 1. Clonar y entrar al proyecto
 ```bash
-git clone https://github.com/TU_USUARIO/tres-al-mar.git
-cd tres-al-mar
+git clone https://github.com/FractalLoco/inventario.git
+cd inventario
 ```
 
 ### 2. Base de datos
