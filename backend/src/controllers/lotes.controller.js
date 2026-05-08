@@ -1,5 +1,6 @@
 const { supabase } = require('../config/supabase')
 const { ok, created, badRequest, notFound, serverError } = require('../helpers/response.helper')
+const { registrarCambio } = require('../helpers/historial.helper')
 
 const getLotes = async (_req, res) => {
   const { data: lotes, error: lotesErr } = await supabase
@@ -81,6 +82,14 @@ const crearLote = async (req, res) => {
 
   await supabase.from('movimientos').insert(movs)
 
+  await registrarCambio({
+    usuario_email: req.user.email,
+    accion: 'CREAR_LOTE',
+    tabla: 'lotes',
+    registro_id: id,
+    descripcion: `Lote ${id} creado — ${especie}, ${insertedProds.length} producto(s), responsable: ${responsable}`,
+  })
+
   return created(res, { ok: true, lote_id: id, productos: insertedProds.length })
 }
 
@@ -88,7 +97,7 @@ const eliminarLote = async (req, res) => {
   const { id } = req.params
 
   const { data: lote, error: loteErr } = await supabase
-    .from('lotes').select('id').eq('id', id).single()
+    .from('lotes').select('id, especie').eq('id', id).single()
 
   if (loteErr || !lote) return notFound(res, `Lote ${id} no encontrado`)
 
@@ -106,6 +115,14 @@ const eliminarLote = async (req, res) => {
 
   const { error: delErr } = await supabase.from('lotes').delete().eq('id', id)
   if (delErr) return serverError(res, delErr.message)
+
+  await registrarCambio({
+    usuario_email: req.user.email,
+    accion: 'ELIMINAR_LOTE',
+    tabla: 'lotes',
+    registro_id: id,
+    descripcion: `Lote ${id} (${lote.especie}) eliminado`,
+  })
 
   return ok(res, { ok: true, message: `Lote ${id} eliminado` })
 }

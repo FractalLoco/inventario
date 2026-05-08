@@ -1,10 +1,13 @@
+import { supabase } from '../lib/supabase'
+
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 const req = async (url, options = {}) => {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers = { 'Content-Type': 'application/json' }
+  if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+
+  const res = await fetch(`${BASE}${url}`, { headers, ...options })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || 'Error en la petición')
   return data
@@ -38,4 +41,11 @@ export const movRecursosService = {
     return req(`/api/mov-recursos${qs ? '?' + qs : ''}`)
   },
   crear: (body) => req('/api/mov-recursos', { method: 'POST', body: JSON.stringify(body) }),
+}
+
+export const historialService = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return req(`/api/historial${qs ? '?' + qs : ''}`)
+  },
 }

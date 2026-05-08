@@ -1,5 +1,6 @@
 const { supabase } = require('../config/supabase')
 const { ok, created, badRequest, notFound, serverError } = require('../helpers/response.helper')
+const { registrarCambio } = require('../helpers/historial.helper')
 
 const getMovimientos = async (req, res) => {
   const { tipo, lote, fecha_desde, fecha_hasta, limite = 300, offset = 0 } = req.query
@@ -18,7 +19,6 @@ const getMovimientos = async (req, res) => {
 
   const { data, error } = await query
   if (error) return serverError(res, error.message)
-
   return ok(res, data)
 }
 
@@ -26,10 +26,7 @@ const crearMovimiento = async (req, res) => {
   const { lote_id, producto_id, producto_nombre, tipo, cajas, responsable, nota } = req.body
 
   const { data: prod, error: prodErr } = await supabase
-    .from('productos_lote')
-    .select('*')
-    .eq('id', producto_id)
-    .single()
+    .from('productos_lote').select('*').eq('id', producto_id).single()
 
   if (prodErr || !prod) return notFound(res, 'Producto no encontrado')
 
@@ -38,12 +35,8 @@ const crearMovimiento = async (req, res) => {
   }
 
   if (tipo === 'Salida') {
-    if (prod.estado === 'Agotado') {
-      return badRequest(res, `El producto "${prod.nombre}" está agotado`)
-    }
-    if (cajas > prod.disponible) {
-      return badRequest(res, `Solo hay ${prod.disponible} cajas disponibles de "${producto_nombre}"`)
-    }
+    if (prod.estado === 'Agotado') return badRequest(res, `El producto "${prod.nombre}" está agotado`)
+    if (cajas > prod.disponible) return badRequest(res, `Solo hay ${prod.disponible} cajas disponibles de "${producto_nombre}"`)
   }
 
   const nuevaDisp = tipo === 'Salida' ? prod.disponible - cajas : prod.disponible + cajas
@@ -51,13 +44,9 @@ const crearMovimiento = async (req, res) => {
   const nuevoProc = tipo === 'Entrada' ? prod.procesadas + cajas : prod.procesadas
 
   let nuevoEstado
-  if (nuevaDisp === 0) {
-    nuevoEstado = 'Agotado'
-  } else if (nuevoDesp > 0) {
-    nuevoEstado = 'En proceso'
-  } else {
-    nuevoEstado = 'Disponible'
-  }
+  if (nuevaDisp === 0) nuevoEstado = 'Agotado'
+  else if (nuevoDesp > 0) nuevoEstado = 'En proceso'
+  else nuevoEstado = 'Disponible'
 
   const { error: updErr } = await supabase
     .from('productos_lote')
@@ -72,11 +61,15 @@ const crearMovimiento = async (req, res) => {
 
   if (movErr) return serverError(res, movErr.message)
 
-  const alertaStock = nuevaDisp === 0
-    ? 'agotado'
-    : nuevaDisp <= Math.ceil(nuevoProc * 0.1)
-    ? 'critico'
-    : null
+  await registrarCambio({
+    usuario_email: req.user.email,
+    accion: tipo === 'Salida' ? 'SALIDA_PRODUCTO' : 'ENTRADA_PRODUCTO',
+    tabla: 'movimientos',
+    registro_id: lote_id,
+    descripcion: `${tipo} de ${cajas} cajas de "${producto_nombre}" — Lote ${lote_id} — ${nota || 'sin nota'}`,
+  })
+
+  const alertaStock = nuevaDisp === 0 ? 'agotado' : nuevaDisp <= Math.ceil(nuevoProc * 0.1) ? 'critico' : null
 
   return created(res, { ok: true, disponible: nuevaDisp, despachado: nuevoDesp, estado: nuevoEstado, alerta: alertaStock })
 }

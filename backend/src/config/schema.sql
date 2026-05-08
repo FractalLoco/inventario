@@ -62,6 +62,16 @@ create table if not exists movimientos_recursos (
   created_at timestamptz default now()
 );
 
+create table if not exists historial_cambios (
+  id bigserial primary key,
+  usuario_email text not null,
+  accion text not null,
+  tabla text not null,
+  registro_id text,
+  descripcion text not null,
+  created_at timestamptz default now()
+);
+
 -- ── Índices para consultas frecuentes ──────────────────────────────────────
 create index if not exists idx_productos_lote_lote_id      on productos_lote(lote_id);
 create index if not exists idx_movimientos_lote_id         on movimientos(lote_id);
@@ -70,6 +80,10 @@ create index if not exists idx_movimientos_created_at      on movimientos(create
 create index if not exists idx_movimientos_tipo            on movimientos(tipo);
 create index if not exists idx_mov_recursos_recurso_id     on movimientos_recursos(recurso_id);
 create index if not exists idx_mov_recursos_created_at     on movimientos_recursos(created_at desc);
+
+create index if not exists idx_historial_created_at  on historial_cambios(created_at desc);
+create index if not exists idx_historial_tabla        on historial_cambios(tabla);
+create index if not exists idx_historial_usuario      on historial_cambios(usuario_email);
 
 -- Índice único case-insensitive en nombre de recursos para evitar duplicados
 create unique index if not exists idx_recursos_nombre_unique on recursos(lower(nombre));
